@@ -1,1 +1,121 @@
-<!doctype html><html lang="ml"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DubFlow — AI Video Dubbing</title><style>:root{font-family:system-ui,-apple-system,sans-serif;color:#f4f5ff;background:#0d1020}*{box-sizing:border-box}body{margin:0;padding:20px}main{max-width:680px;margin:auto}.brand{font-size:29px;font-weight:800;letter-spacing:-1px}.brand span{color:#9d8cff}.sub{color:#aeb3cb;line-height:1.6}.panel{background:#191d32;border:1px solid #353a56;border-radius:20px;padding:20px;margin-top:20px}label{display:block;margin:16px 0 7px;font-weight:600}.drop{border:2px dashed #666b8e;border-radius:16px;text-align:center;padding:26px 12px;cursor:pointer;background:#20243a}.drop input{display:none}select,button{width:100%;border-radius:12px;padding:14px;font:inherit}select{background:#111529;color:white;border:1px solid #555a75}button{border:0;background:#8977ff;color:white;font-weight:750;margin-top:22px;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}video{width:100%;max-height:360px;margin-top:16px;border-radius:12px;background:#05070e}.note{font-size:13px;color:#aeb3cb;line-height:1.6}.status{padding:12px;border-radius:12px;background:#282b43;margin-top:14px}footer{text-align:center;color:#898fae;font-size:12px;margin-top:26px}</style></head><body><main><div class="brand">🎬 Dub<span>Flow</span></div><p class="sub">നിങ്ങളുടെ വീഡിയോ, നിങ്ങൾക്ക് ഇഷ്ടമുള്ള ഭാഷയിൽ. AI Dubbing Web App — Prototype v1</p><section class="panel"><label for="file">1. വീഡിയോ തിരഞ്ഞെടുക്കുക</label><label class="drop" for="file">📁<p id="filename">MP4 / WebM വീഡിയോ ഇവിടെ തിരഞ്ഞെടുക്കൂ</p><small>Tap to browse your phone</small><input id="file" type="file" accept="video/*"></label><video id="player" controls hidden></video><label for="source">2. Original language</label><select id="source"><option value="auto">Auto detect (API required)</option><option value="ml">Malayalam</option><option value="en">English</option><option value="hi">Hindi</option><option value="ta">Tamil</option><option value="ar">Arabic</option></select><label for="target">3. Dub into</label><select id="target"><option value="en">English</option><option value="ml">Malayalam</option><option value="hi">Hindi</option><option value="ta">Tamil</option><option value="ar">Arabic</option></select><button id="dub" disabled>✨ Start AI Dubbing</button><div id="status" class="status" role="status">ആദ്യം ഒരു വീഡിയോ തിരഞ്ഞെടുക്കൂ.</div><p class="note">ഈ പതിപ്പ് interface demo ആണ്. യഥാർത്ഥ dubbing, translation, voice generation എന്നിവയ്ക്ക് സുരക്ഷിതമായ backend-ഉം dubbing API-യും ബന്ധിപ്പിക്കണം. API key ഒരിക്കലും ഈ HTML ഫയലിൽ ചേർക്കരുത്.</p></section><footer>DubFlow • Prototype v1 • No uploads or charges</footer></main><script>const file=document.getElementById('file'),player=document.getElementById('player'),nameEl=document.getElementById('filename'),status=document.getElementById('status'),dub=document.getElementById('dub');let url;file.addEventListener('change',()=>{const f=file.files[0];if(!f)return;if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);player.src=url;player.hidden=false;nameEl.textContent=f.name+' ('+(f.size/1024/1024).toFixed(1)+' MB)';dub.disabled=false;status.textContent='വീഡിയോ തയ്യാറാണ്. Preview ചെയ്യാം.'});dub.addEventListener('click',()=>{const s=document.getElementById('source'),t=document.getElementById('target');status.textContent='Prototype ready: '+s.options[s.selectedIndex].text+' → '+t.options[t.selectedIndex].text+'. യഥാർത്ഥ dubbing തുടങ്ങാൻ backend/API connection വേണം. ഈ demo വീഡിയോ upload ചെയ്യുകയോ credits ചെലവാക്കുകയോ ചെയ്യുന്നില്ല.'});</script></body></html>
+
+<!doctype html>
+<html lang="ml">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DubFlow — AI Video Dubbing</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0d1020;color:#fff;font-family:system-ui;padding:20px}
+main{max-width:650px;margin:auto}
+h1{font-size:32px}
+h1 span{color:#9d8cff}
+.panel{background:#191d32;padding:22px;border-radius:18px;margin-top:22px}
+label{display:block;margin-top:18px;margin-bottom:8px}
+input,select,button{width:100%;padding:15px;border-radius:12px;font-size:16px}
+select{background:#101428;color:white;border:1px solid #555}
+input{background:#252a42;color:white}
+button{background:#8977ff;color:white;border:0;font-weight:bold;margin-top:24px}
+button:disabled{opacity:.5}
+video{width:100%;margin-top:15px;border-radius:12px}
+#status{margin-top:18px;line-height:1.6;overflow-wrap:anywhere}
+a{color:#b7aaff}
+small{color:#aeb3cb}
+</style>
+</head>
+<body>
+<main>
+<h1>🎬 Dub<span>Flow</span></h1>
+<p>നിങ്ങളുടെ വീഡിയോ നിങ്ങൾക്ക് ഇഷ്ടമുള്ള ഭാഷയിൽ!</p>
+
+<div class="panel">
+<label>1. വീഡിയോ തിരഞ്ഞെടുക്കുക</label>
+<input type="file" id="videoFile" accept="video/*">
+
+<video id="preview" controls hidden></video>
+
+<label>2. Original Language</label>
+<select id="source">
+<option value="auto">Auto Detect</option>
+<option value="ml">Malayalam</option>
+<option value="en">English</option>
+<option value="hi">Hindi</option>
+<option value="ta">Tamil</option>
+<option value="ar">Arabic</option>
+</select>
+
+<label>3. Dub Into</label>
+<select id="target">
+<option value="en">English</option>
+<option value="ml">Malayalam</option>
+<option value="hi">Hindi</option>
+<option value="ta">Tamil</option>
+<option value="ar">Arabic</option>
+</select>
+
+<button id="start">✨ Start AI Dubbing</button>
+<div id="status">വീഡിയോ തിരഞ്ഞെടുക്കൂ.</div>
+</div>
+<small>DubFlow AI • Dubbing may use paid API credits.</small>
+</main>
+
+<script>
+const BACKEND = "https://dubflow-ai-dubbing.onrender.com";
+const fileInput = document.getElementById("videoFile");
+const preview = document.getElementById("preview");
+const statusBox = document.getElementById("status");
+const startButton = document.getElementById("start");
+let previewUrl;
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(file);
+  preview.src = previewUrl;
+  preview.hidden = false;
+  statusBox.textContent = "വീഡിയോ തയ്യാറാണ്.";
+});
+
+startButton.addEventListener("click", async () => {
+  const file = fileInput.files[0];
+  if (!file) {
+    statusBox.textContent = "ആദ്യം വീഡിയോ തിരഞ്ഞെടുക്കൂ.";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("video", file);
+  form.append("source_lang", document.getElementById("source").value);
+  form.append("target_lang", document.getElementById("target").value);
+
+  startButton.disabled = true;
+  statusBox.textContent = "AI Dubbing request അയയ്ക്കുന്നു...";
+
+  try {
+    const response = await fetch(BACKEND + "/api/dub", {
+      method: "POST",
+      body: form
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Dubbing request failed");
+    }
+
+    statusBox.textContent =
+      "Dubbing request സ്വീകരിച്ചു. Job ID: " +
+      (data.dubbing_id || data.id || "Not provided") +
+      ". വീഡിയോ തയ്യാറാകുന്നത് പരിശോധിക്കാനും ഡൗൺലോഡ് ചെയ്യാനും അടുത്ത ഘട്ടം ബന്ധിപ്പിക്കണം.";
+
+  } catch (error) {
+    statusBox.textContent = "Error: " + error.message;
+  } finally {
+    startButton.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
