@@ -51,11 +51,12 @@ app.post("/api/dub", upload.single("video"), async (req, res) => {
 
     const data = await response.json();
     res.status(response.status).json(data);
-  } catch (error) {
-    res.status(500).json({ error: "Dubbing request failed" });
+   } catch (error) {
+    console.error("DubFlow error:", error);
+res.status(500).json({ error: error.message || "Dubbing request failed" });
   } finally {
-    fs.unlink(req.file.path, () => {});
-  }
+  fs.unlink(req.file.path, () => {});
+}
 });
 
 const PORT = process.env.PORT || 10000;
