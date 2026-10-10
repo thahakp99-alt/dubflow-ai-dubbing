@@ -1,0 +1,13 @@
+**
+!package.json
+!package-lock.json
+!server.js
+!access.js
+!media-validation.js
+!provider-diagnostics.js
+!index.html
+!staging/
+!staging/server.js
+!test/
+!test/fixtures/
+!test/fixtures/mock-video.mp4

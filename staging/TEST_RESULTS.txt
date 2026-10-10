@@ -1,0 +1,11 @@
+✔ staging refuses enabled dubbing, provider key or absent token (0.930361ms)
+✔ local staging preflight verifies both binaries and synthetic MP4 (146.934944ms)
+✔ staging health, same-origin UI, blocked create and blocked status provider (33.752406ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 344.96963

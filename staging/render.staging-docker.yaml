@@ -1,0 +1,19 @@
+# LOCAL PROPOSAL ONLY. Applying this creates a new service and requires approval.
+services:
+  - type: web
+    name: dubflow-staging-disabled
+    runtime: docker
+    plan: free
+    repo: https://github.com/thahakp99-alt/dubflow-ai-dubbing
+    branch: dubflow-staging-disabled
+    autoDeployTrigger: "off"
+    dockerfilePath: ./staging/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: DUBBING_ENABLED
+        value: "false"
+      - key: DUBFLOW_ACCESS_TOKEN
+        generateValue: true
+# ELEVENLABS_API_KEY intentionally absent. Do NOT attach production env groups.
+# RENDER_EXTERNAL_URL is provided by Render; no production origin is inherited.
