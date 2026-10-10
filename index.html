@@ -30,6 +30,9 @@ small{color:#aeb3cb}
 <p>നിങ്ങളുടെ വീഡിയോ നിങ്ങൾക്ക് ഇഷ്ടമുള്ള ഭാഷയിൽ!</p>
 
 <div class="panel">
+<label for="accessToken">DubFlow Access Token</label>
+<input type="password" id="accessToken" autocomplete="off" placeholder="സ്വകാര്യ access token">
+<small>ഇവിടെ ElevenLabs API key നൽകേണ്ടതില്ല.</small>
 <label>1. വീഡിയോ തിരഞ്ഞെടുക്കുക</label>
 <input type="file" id="videoFile" accept="video/*">
 
@@ -55,66 +58,152 @@ small{color:#aeb3cb}
 </select>
 
 <button id="start">✨ Start AI Dubbing</button>
-<div id="status">വീഡിയോ തിരഞ്ഞെടുക്കൂ.</div>
+<button id="resume" hidden>മുൻ job പരിശോധിക്കുക</button>
+<button id="stop" hidden>Status പരിശോധന നിർത്തുക</button>
+<div id="result" hidden>
+<p id="resultLabel">ഡബ്ബ് ചെയ്ത വീഡിയോ</p>
+<video id="dubbedPreview" controls playsinline></video>
+<a id="download" download>Download</a>
+</div>
+<div id="status" role="status" aria-live="polite">വീഡിയോ തിരഞ്ഞെടുക്കൂ.</div>
 </div>
 <small>DubFlow AI • Dubbing may use paid API credits.</small>
 </main>
 
 <script>
-const BACKEND = "https://dubflow-ai-dubbing.onrender.com";
-const fileInput = document.getElementById("videoFile");
-const preview = document.getElementById("preview");
-const statusBox = document.getElementById("status");
-const startButton = document.getElementById("start");
-let previewUrl;
-
+const BACKEND = location.hostname === "thahakp99-alt.github.io"
+  ? "https://dubflow-ai-dubbing.onrender.com" : location.origin;
+const $ = id => document.getElementById(id);
+const fileInput = $("videoFile"), preview = $("preview"), statusBox = $("status");
+const startButton = $("start"), resumeButton = $("resume"), stopButton = $("stop");
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+let previewUrl, resultUrl, activeController, pollGeneration = 0, busy = false;
+let job = null;
+try { job = JSON.parse(sessionStorage.getItem("dubflow-job") || "null"); } catch {}
+function validJob(value) {
+  return value && /^[A-Za-z0-9_-]{1,128}$/.test(value.dubbing_id)
+    && typeof value.job_token === "string" && value.job_token.length <= 1024
+    && /^[a-z]{2,3}$/.test(value.target_lang);
+}
+if (!validJob(job)) job = null;
+resumeButton.hidden = !job;
+function rememberJob(value) {
+  job = value;
+  try { sessionStorage.setItem("dubflow-job", JSON.stringify(value)); } catch {}
+  resumeButton.hidden = !value;
+}
+function setBusy(value) {
+  busy = value; startButton.disabled = value; resumeButton.disabled = value;
+  stopButton.hidden = !value;
+}
+function authHeaders(currentJob) {
+  const token = $("accessToken").value.trim();
+  if (!token) throw new Error("DubFlow access token നൽകൂ. ElevenLabs key ഇവിടെ നൽകരുത്.");
+  return { Authorization: "Bearer " + token, ...(currentJob ? {"X-Job-Token": currentJob.job_token} : {}) };
+}
+async function request(path, options = {}, currentJob = null) {
+  if (location.protocol === "file:") throw new Error("Local demo തുറക്കാൻ npm run mock ഉപയോഗിക്കുക; HTML ഫയൽ നേരിട്ട് തുറന്ന് request അയയ്ക്കാനാവില്ല.");
+  const headers = authHeaders(currentJob);
+  activeController = new AbortController();
+  const response = await fetch(BACKEND + path, {...options, headers, signal: activeController.signal});
+  return response;
+}
+async function jsonResponse(response) {
+  let data;
+  try { data = await response.json(); }
+  catch { throw new Error(`സാധുവായ മറുപടി ലഭിച്ചില്ല (HTTP ${response.status}). വീണ്ടും upload ചെയ്യുന്നതിന് മുമ്പ് ElevenLabs history പരിശോധിക്കുക.`); }
+  if (!response.ok) {
+    const message = data && typeof data.error === "string" ? data.error : "Request പരാജയപ്പെട്ടു.";
+    const code = data && /^[a-z_]{1,64}$/.test(data.code) ? ` • ${data.code}` : "";
+    const reference = data && /^[a-f0-9-]{36}$/.test(data.request_id) ? ` • Reference: ${data.request_id}` : "";
+    throw new Error(`${message} (HTTP ${response.status}${code})${reference}`);
+  }
+  return data;
+}
+function showError(error) {
+  statusBox.textContent = "Error: " + (error instanceof TypeError
+    ? "ബന്ധം പരാജയപ്പെട്ടു. വീണ്ടും upload ചെയ്യുന്നതിന് മുമ്പ് ElevenLabs history പരിശോധിക്കുക." : error.message);
+}
+function clearResult() {
+  $("dubbedPreview").removeAttribute("src");
+  $("dubbedPreview").load();
+  $("download").removeAttribute("href");
+  $("result").hidden = true;
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = null;
+}
+async function loadMedia(currentJob, generation) {
+  const response = await request(`/api/jobs/${currentJob.dubbing_id}/media`, {}, currentJob);
+  if (!response.ok) { await jsonResponse(response); return; }
+  const type = (response.headers.get("content-type") || "").split(";")[0];
+  const extensions = {"video/mp4":"mp4", "video/webm":"webm", "audio/mpeg":"mp3"};
+  if (!extensions[type]) throw new Error("സാധുവായ media ലഭിച്ചില്ല.");
+  const blob = await response.blob();
+  if (!blob.size || blob.size > 200 * 1024 * 1024) throw new Error("Media file size അനുവദനീയമല്ല.");
+  if (generation !== pollGeneration) return;
+  clearResult(); resultUrl = URL.createObjectURL(blob);
+  $("dubbedPreview").src = resultUrl;
+  $("download").href = resultUrl;
+  $("download").download = `dubflow-${currentJob.target_lang}.${extensions[type]}`;
+  $("resultLabel").textContent = type.startsWith("audio/") ? "ഡബ്ബ് ചെയ്ത audio (provider നൽകിയ output)" : "ഡബ്ബ് ചെയ്ത വീഡിയോ";
+  $("result").hidden = false;
+  statusBox.textContent = "ഡബ്ബിങ് പൂർത്തിയായി. Preview കാണാം; Download അമർത്തി ഫയൽ സൂക്ഷിക്കാം.";
+}
+async function pollJob(currentJob, generation) {
+  for (let attempt = 0; attempt < 120 && generation === pollGeneration; attempt++) {
+    const data = await jsonResponse(await request(`/api/jobs/${currentJob.dubbing_id}`, {}, currentJob));
+    if (generation !== pollGeneration) return;
+    if (data.status === "dubbed") { await loadMedia(currentJob, generation); return; }
+    if (data.status === "failed") throw new Error("ഡബ്ബിങ് പരാജയപ്പെട്ടു. ElevenLabs project details പരിശോധിക്കുക.");
+    if (!["queued", "preparing", "dubbing"].includes(data.status)) throw new Error("അറിയാത്ത job status ലഭിച്ചു.");
+    statusBox.textContent = `ഡബ്ബിങ് നടക്കുന്നു… Job: ${currentJob.dubbing_id}`;
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  if (generation === pollGeneration) statusBox.textContent = "Status പരിശോധനയ്ക്ക് ഇടവേള നൽകി. ‘മുൻ job പരിശോധിക്കുക’ അമർത്തി തുടരാം; വീണ്ടും upload ചെയ്യേണ്ടതില്ല.";
+}
 fileInput.addEventListener("change", () => {
-  const file = fileInput.files[0];
-  if (!file) return;
   if (previewUrl) URL.revokeObjectURL(previewUrl);
-  previewUrl = URL.createObjectURL(file);
-  preview.src = previewUrl;
-  preview.hidden = false;
-  statusBox.textContent = "വീഡിയോ തയ്യാറാണ്.";
+  const file = fileInput.files[0]; preview.hidden = !file;
+  if (!file) { preview.removeAttribute("src"); return; }
+  previewUrl = URL.createObjectURL(file); preview.src = previewUrl;
+  if (!busy) statusBox.textContent = "വീഡിയോ തയ്യാറാണ്.";
 });
-
 startButton.addEventListener("click", async () => {
+  if (busy) return;
   const file = fileInput.files[0];
-  if (!file) {
-    statusBox.textContent = "ആദ്യം വീഡിയോ തിരഞ്ഞെടുക്കൂ.";
-    return;
-  }
-
-  const form = new FormData();
-  form.append("video", file);
-  form.append("source_lang", document.getElementById("source").value);
-  form.append("target_lang", document.getElementById("target").value);
-
-  startButton.disabled = true;
-  statusBox.textContent = "AI Dubbing request അയയ്ക്കുന്നു...";
-
+  if (!file) { statusBox.textContent = "ആദ്യം വീഡിയോ തിരഞ്ഞെടുക്കൂ."; return; }
+  if (file.size > MAX_VIDEO_BYTES) { statusBox.textContent = "വീഡിയോ 100 MB-ൽ കൂടുതലാണ്."; return; }
+  if (file.type && !file.type.startsWith("video/") && file.type !== "application/octet-stream") { statusBox.textContent = "ഒരു വീഡിയോ ഫയൽ തിരഞ്ഞെടുക്കൂ."; return; }
+  const generation = ++pollGeneration;
+  setBusy(true); clearResult();
+  statusBox.textContent = "Dubbing request അയയ്ക്കുന്നു…";
   try {
-    const response = await fetch(BACKEND + "/api/dub", {
-      method: "POST",
-      body: form
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Dubbing request failed");
-    }
-
-    statusBox.textContent =
-      "Dubbing request സ്വീകരിച്ചു. Job ID: " +
-      (data.dubbing_id || data.id || "Not provided") +
-      ". വീഡിയോ തയ്യാറാകുന്നത് പരിശോധിക്കാനും ഡൗൺലോഡ് ചെയ്യാനും അടുത്ത ഘട്ടം ബന്ധിപ്പിക്കണം.";
-
-  } catch (error) {
-    statusBox.textContent = "Error: " + error.message;
-  } finally {
-    startButton.disabled = false;
-  }
+    const form = new FormData(); form.append("video", file);
+    form.append("source_lang", $("source").value); form.append("target_lang", $("target").value);
+    const data = await jsonResponse(await request("/api/dub", {method:"POST", body:form}));
+    if (!validJob(data)) throw new Error("സാധുവായ job reference ലഭിച്ചില്ല. വീണ്ടും അയയ്ക്കുന്നതിന് മുമ്പ് ElevenLabs history പരിശോധിക്കുക.");
+    if (generation !== pollGeneration) return;
+    rememberJob({dubbing_id:data.dubbing_id,job_token:data.job_token,target_lang:data.target_lang});
+    if (generation === pollGeneration) await pollJob(job, generation);
+  } catch (error) { if (generation === pollGeneration) showError(error); }
+  finally { if (generation === pollGeneration) setBusy(false); }
+});
+resumeButton.addEventListener("click", async () => {
+  if (busy || !job) return;
+  const generation = ++pollGeneration; setBusy(true);
+  try { await pollJob(job, generation); }
+  catch (error) { if (generation === pollGeneration) showError(error); }
+  finally { if (generation === pollGeneration) setBusy(false); }
+});
+stopButton.addEventListener("click", () => {
+  ++pollGeneration; activeController?.abort(); setBusy(false);
+  statusBox.textContent = "പരിശോധന നിർത്തി. Server job റദ്ദാക്കിയിട്ടില്ല. വീണ്ടും upload ചെയ്യുന്നതിന് മുമ്പ് മുൻ job/history പരിശോധിക്കുക.";
+});
+$("dubbedPreview").addEventListener("error", () => {
+  statusBox.textContent = "ഈ browser-ൽ preview തുറക്കാനായില്ല. Download ചെയ്ത് അനുയോജ്യമായ player-ൽ തുറക്കാം.";
+});
+window.addEventListener("beforeunload", () => {
+  activeController?.abort(); if (previewUrl) URL.revokeObjectURL(previewUrl); if (resultUrl) URL.revokeObjectURL(resultUrl);
 });
 </script>
 </body>
