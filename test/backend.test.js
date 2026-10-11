@@ -197,3 +197,65 @@ test('400 diagnostics correlate provider ID to UI reference without raw body or 
   assert.ok(!JSON.stringify(f.logs).includes(FAKE_KEY));assert.ok(!JSON.stringify(f.logs).includes(ACCESS));
   assert.equal(f.calls.length,1);
 });
+
+for (const upstreamStatus of [400,200]) {
+  for (const errorName of ['AbortError','TypeError']) {
+    test(`body read failure preserves header snapshot: ${upstreamStatus} ${errorName}`,async t=>{
+      const headers=new Headers({'request-id':'request-12345678','x-trace-id':'trace-12345678',
+        authorization:FAKE_KEY,'set-cookie':ACCESS});
+      const f=await fixture(t,{reply:()=>({status:upstreamStatus,ok:upstreamStatus===200,headers,
+        text:async()=>{
+          // Proves the metadata was captured before body consumption.
+          headers.set('request-id','changed-12345678');
+          headers.delete('x-trace-id');
+          throw Object.assign(new Error(`raw-private-error ${FAKE_KEY} ${ACCESS}`),{name:errorName});
+        }})});
+      const r=await f.request(video());
+      assert.equal(r.response.status,errorName==='AbortError'?504:502);
+      assert.equal(r.data.upstream_status,upstreamStatus);
+      assert.equal(f.logs[0].upstreamStatus,upstreamStatus);
+      assert.equal(f.logs[0].requestId,r.data.request_id);
+      assert.equal(f.logs[0].providerBodyRead,'failed');
+      assert.deepEqual(f.logs[0].providerReferences,{
+        'request-id':'request-12345678','x-trace-id':'trace-12345678'});
+      assert.equal(r.data.providerReferences,undefined);
+      const output=JSON.stringify([f.logs,r.data]);
+      for(const secret of [FAKE_KEY,ACCESS,'raw-private-error','authorization','set-cookie'])
+        assert.ok(!output.includes(secret));
+      assert.equal(f.calls.length,1);
+      await cleaned(f.dir);
+    });
+  }
+}
+test('body read failure drops secret or invalid reference headers',async t=>{
+  const f=await fixture(t,{reply:()=>({status:400,headers:new Headers({
+    'request-id':ACCESS,'x-request-id':'Bearer private-value','trace-id':'short'}),
+    text:async()=>{throw new Error(FAKE_KEY);}})});
+  const r=await f.request(video());
+  assert.equal(r.data.upstream_status,400);
+  assert.deepEqual(f.logs[0].providerReferences,{});
+  assert.ok(!JSON.stringify([f.logs,r.data]).includes(ACCESS));
+  assert.ok(!JSON.stringify([f.logs,r.data]).includes(FAKE_KEY));
+  assert.equal(f.calls.length,1); await cleaned(f.dir);
+});
+test('body read deadline preserves received status and trace ID',async t=>{
+  const f=await fixture(t,{timeoutMs:20,reply:(_url,{signal})=>({status:400,
+    headers:new Headers({'x-trace-id':'deadline-12345678'}),
+    text:()=>new Promise((resolve,reject)=>{
+      if(signal.aborted)reject(signal.reason);
+      else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
+    })})});
+  const r=await f.request(video());
+  assert.equal(r.response.status,504);assert.equal(r.data.upstream_status,400);
+  assert.equal(f.logs[0].providerReferences['x-trace-id'],'deadline-12345678');
+  assert.equal(f.calls.length,1);await cleaned(f.dir);
+});
+test('invalid success body preserves received reference without logging raw text',async t=>{
+  const f=await fixture(t,{reply:()=>new Response(`private-body ${FAKE_KEY}`,{
+    headers:{'request-id':'invalidbody-12345678'}})});
+  const r=await f.request(video());
+  assert.equal(r.response.status,502);assert.equal(r.data.upstream_status,200);
+  assert.equal(f.logs[0].providerReferences['request-id'],'invalidbody-12345678');
+  assert.ok(!JSON.stringify([f.logs,r.data]).includes('private-body'));
+  assert.equal(f.calls.length,1);await cleaned(f.dir);
+});
