@@ -148,6 +148,8 @@ function createApp({
 
       let response;
       let raw;
+      let receivedStatus;
+      let receivedReferences;
       try {
         response = await fetchImpl("https://api.elevenlabs.io/v1/dubbing", {
           method: "POST",
@@ -156,12 +158,21 @@ function createApp({
           redirect: "error",
           signal: AbortSignal.timeout(timeoutMs),
         });
+        // Snapshot only sanitized metadata before consuming the response stream.
+        // Body reads can fail after the provider has already accepted/rejected it.
+        receivedStatus = response.status;
+        receivedReferences = diagnostics(undefined, response.headers,
+          [apiKey, accessToken]).providerReferences;
         raw = await response.text();
       } catch (error) {
         const timedOut = error.name === "TimeoutError" || error.name === "AbortError";
         return fail(res, timedOut ? 504 : 502,
           timedOut ? "provider_timeout" : "provider_connection_error",
-          "Could not confirm whether ElevenLabs accepted the request. Check its history before retrying; a job may already exist.");
+          "Could not confirm whether ElevenLabs accepted the request. Check its history before retrying; a job may already exist.",
+          receivedStatus, receivedReferences ? {
+            providerReferences: receivedReferences,
+            providerBodyRead: "failed",
+          } : undefined);
       }
 
       let data;
@@ -173,7 +184,8 @@ function createApp({
       }
       if (!data || !validId(data.dubbing_id)) {
         return fail(res, 502, "invalid_provider_response",
-          "ElevenLabs returned an unexpected response. Check its history before retrying; a job may already exist.");
+          "ElevenLabs returned an unexpected response. Check its history before retrying; a job may already exist.",
+          receivedStatus, { providerReferences: receivedReferences });
       }
       return res.json({ dubbing_id: data.dubbing_id, job_token: access.ticket(data.dubbing_id,target), target_lang:target,
         ...(Number.isFinite(data.expected_duration_sec)
