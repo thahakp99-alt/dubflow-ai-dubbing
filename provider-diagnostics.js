@@ -1,6 +1,6 @@
 // Deliberately project the error body: arbitrary messages, input, ctx, headers,
 // file names and unknown properties must never be copied into logs.
-const fields=new Set(['body','file','source_lang','target_lang','num_speakers','watermark']);
+const fields=new Set(['body','file','source_lang','target_lang','num_speakers','watermark','dubbing_studio']);
 const types=new Set(['missing','int_parsing','bool_parsing','string_type','value_error','literal_error']);
 const reasons=[['codec',/codec/i],['format',/format|container/i],['language',/language/i],
   ['speakers',/speaker/i],['audio',/audio/i],['empty_file',/empty file/i]];

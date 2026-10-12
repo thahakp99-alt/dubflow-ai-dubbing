@@ -58,9 +58,9 @@ function createApp({
   accessToken = process.env.DUBFLOW_ACCESS_TOKEN,
   allowedOrigins = (process.env.ALLOWED_ORIGINS || "https://thahakp99-alt.github.io").split(",").map(x=>x.trim()).filter(Boolean),
   dubbingEnabled = process.env.DUBBING_ENABLED === "true",
-  // Legacy API defaults to no watermark. Make the choice explicit; never retry
+  // Prefer watermark by default. Make the choice explicit; never retry
   // a rejected create automatically. This does not make generation credit-free.
-  dubbingWatermark = process.env.DUBBING_WATERMARK ?? "false",
+  dubbingWatermark = process.env.DUBBING_WATERMARK ?? "true",
   maxDownloadBytes = 200 * 1024 * 1024,
   createLimit = 6,
   readLimit = 120,
@@ -145,6 +145,7 @@ function createApp({
       form.append("source_lang", source);
       form.append("num_speakers", "0");
       form.append("watermark", dubbingWatermark);
+      form.append("dubbing_studio", "false");
 
       let response;
       let raw;
