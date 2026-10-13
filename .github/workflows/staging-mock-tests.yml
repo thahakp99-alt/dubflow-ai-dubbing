@@ -1,0 +1,58 @@
+name: Staging mock tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dubflow-staging-disabled
+    paths:
+      - '.github/workflows/staging-mock-tests.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'server.js'
+      - 'access.js'
+      - 'provider-diagnostics.js'
+      - 'media-validation.js'
+      - 'mock-server.js'
+      - 'index.html'
+      - 'staging/**'
+      - 'test/**'
+
+permissions:
+  contents: read
+
+jobs:
+  mock-tests:
+    if: github.ref == 'refs/heads/dubflow-staging-disabled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DUBBING_ENABLED: 'false'
+      ELEVENLABS_API_KEY: ''
+      DUBBING_WATERMARK: 'true'
+      CI: 'true'
+    steps:
+      - name: Checkout staging commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - name: Verify staging and disabled provider
+        shell: bash
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/dubflow-staging-disabled"
+          test "${DUBBING_ENABLED}" = "false"
+          test -z "${ELEVENLABS_API_KEY}"
+          git log -1 --format='%H'
+      - name: Check media prerequisites
+        run: |
+          ffprobe -version
+          ffmpeg -version
+      - name: Clean install without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run mock and contract tests
+        run: npm test
